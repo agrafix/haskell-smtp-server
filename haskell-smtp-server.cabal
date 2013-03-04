@@ -1,0 +1,12 @@
+Name:                haskell-smtp-server
+Version:             0.1
+Synopsis:            Simple Haskell SMTP Server
+Description:
+License:             BSD3
+License-file:        LICENSE
+Author:              Alexander Thiemann
+Maintainer:          Alexander Thiemann <mail@agrafix.net>
+Build-Depends:       base>=4.5,text, stm, mtl, network, transformers
+
+Executable:          hsmtp
+Main-is:             Main.hs
