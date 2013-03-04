@@ -1,24 +1,40 @@
+module Smtp
+    ( runServer, Email(..), EmailChan, newEmailChan, getNextEmail )
+where
+
 import Network (listenOn, withSocketsDo, accept, PortID(..), Socket)
 import System.IO (hSetBuffering, hGetLine, hPutStrLn, hClose, BufferMode(..), Handle)
-import Control.Concurrent (forkIO)
 import Control.Monad
 import Control.Monad.State.Lazy
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM
 
 import qualified Data.Text as T
 
-runServer :: Int -> IO ()
-runServer serverPort = withSocketsDo $ do
+type EmailChan = TChan Email
+
+newEmailChan :: IO (EmailChan)
+newEmailChan = atomically (newTChan)
+
+getNextEmail :: EmailChan -> IO Email
+getNextEmail = atomically . readTChan
+
+publishEmail :: EmailChan -> Email -> IO ()
+publishEmail chan = atomically . writeTChan chan
+
+runServer :: Int -> EmailChan -> IO ()
+runServer serverPort chan = withSocketsDo $ do
     let port = fromIntegral serverPort
     sock <- listenOn $ PortNumber port
     putStrLn $ "Haskell SMTP listening on port " ++ (show serverPort)
-    sockHandler sock
+    sockHandler sock chan
 
-sockHandler :: Socket -> IO ()
-sockHandler sock = do
+sockHandler :: Socket -> EmailChan -> IO ()
+sockHandler sock chan = do
     (handle, _, _) <- accept sock
     hSetBuffering handle NoBuffering
-    forkIO $ newClient handle
-    sockHandler sock
+    forkIO $ newClient handle chan
+    sockHandler sock chan
 
 type EmailM a = StateT Email IO a
 
@@ -31,14 +47,11 @@ data Email
    , mail_data :: String
    } deriving (Show, Eq)
 
-newClient :: Handle -> IO ()
-newClient handle =
+newClient :: Handle -> EmailChan -> IO ()
+newClient handle chan =
     do hPutStrLn handle "220 service ready"
        email <- execStateT (commandProcessor handle) (Email "" "" "" False "")
-       putStrLn "==================="
-       putStrLn "New Mail:"
-       putStrLn "==================="
-       putStrLn $ show email
+       publishEmail chan email
 
 respond :: Handle -> Int -> String -> EmailM ()
 respond handle code msg = liftIO $ hPutStrLn handle $ (show code) ++ " " ++ msg
